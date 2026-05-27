@@ -1,0 +1,16 @@
+{
+    "01KSE3GD5M2ZTDFQBCVNQVF850": {
+        "rank_definitions": {
+            "Moderator": 1,
+            "Admin": 2,
+            "High-Ranking": 4,
+            "Corporate": 5
+        },
+        "users": {
+            "DevVirso": {
+                "rank_name": "Unranked",
+                "rank_level": 0
+            }
+        }
+    }
+}

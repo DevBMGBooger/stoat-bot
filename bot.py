@@ -114,130 +114,147 @@ async def message(event):
 
     server_id = str(msg.channel.server_id)
 
-    # =================================================
-    # /verify
-    # =================================================
+# =================================================
+# /verify
+# Usage:
+# /verify ROBLOX_USER_ID
+# =================================================
 
-    if msg.content.startswith("/verify"):
+if msg.content.startswith("/verify"):
 
-        parts = msg.content.split(" ")
+    parts = msg.content.split(" ")
 
-        if len(parts) < 2:
+    if len(parts) < 2:
+
+        await msg.channel.send(
+            "❌ Usage:\n/verify ROBLOX_USER_ID"
+        )
+
+        return
+
+    roblox_id = parts[1]
+
+    # Make sure ID is numbers only
+    if not roblox_id.isdigit():
+
+        await msg.channel.send(
+            "❌ Roblox User ID must be numbers only."
+        )
+
+        return
+
+    try:
+
+        response = requests.get(
+            f"https://users.roblox.com/v1/users/{roblox_id}"
+        )
+
+        if response.status_code != 200:
 
             await msg.channel.send(
-                "❌ Usage:\n/verify ROBLOX_USERNAME"
+                "❌ Invalid Roblox User ID."
             )
 
             return
 
-        roblox_username = parts[1]
+        data = response.json()
 
-        try:
+        roblox_username = data["name"]
 
-            response = requests.post(
-                "https://users.roblox.com/v1/usernames/users",
-                json={
-                    "usernames": [roblox_username],
-                    "excludeBannedUsers": False
-                }
-            )
-
-            data = response.json()
-
-            if len(data["data"]) == 0:
-
-                await msg.channel.send(
-                    "❌ Roblox account not found."
-                )
-
-                return
-
-            roblox_id = str(data["data"][0]["id"])
-
-            verify_code = str(random.randint(100000, 999999))
-
-            verify_data = load_verify()
-
-            verify_data[user_id] = {
-                "roblox_username": roblox_username,
-                "roblox_id": roblox_id,
-                "verify_code": verify_code,
-                "verified": False
-            }
-
-            save_verify(verify_data)
-
-            await msg.channel.send(
-                f"🔐 Verification Started\n\n"
-                f"1. Put this code in your Roblox description:\n\n"
-                f"{verify_code}\n\n"
-                f"2. Run:\n"
-                f"/confirmverify"
-            )
-
-        except Exception as e:
-
-            print(e)
-
-            await msg.channel.send(
-                "❌ Failed to connect to Roblox."
-            )
-
-    # =================================================
-    # /confirmverify
-    # =================================================
-
-    if msg.content.startswith("/confirmverify"):
+        verify_code = str(random.randint(100000, 999999))
 
         verify_data = load_verify()
 
-        if user_id not in verify_data:
+        verify_data[user_id] = {
+            "roblox_username": roblox_username,
+            "roblox_id": roblox_id,
+            "verify_code": verify_code,
+            "verified": False
+        }
+
+        save_verify(verify_data)
+
+        await msg.channel.send(
+            f"🔐 Verification Started\n\n"
+            f"🎮 Roblox User: {roblox_username}\n"
+            f"🆔 Roblox ID: {roblox_id}\n\n"
+            f"Put THIS code in your Roblox profile description:\n\n"
+            f"{verify_code}\n\n"
+            f"Then run:\n"
+            f"/confirmverify"
+        )
+
+    except Exception as e:
+
+        print(e)
+
+        await msg.channel.send(
+            "❌ Failed to connect to Roblox."
+        )
+
+# =================================================
+# /confirmverify
+# =================================================
+
+if msg.content.startswith("/confirmverify"):
+
+    verify_data = load_verify()
+
+    if user_id not in verify_data:
+
+        await msg.channel.send(
+            "❌ Start verification first with /verify"
+        )
+
+        return
+
+    roblox_id = verify_data[user_id]["roblox_id"]
+    verify_code = verify_data[user_id]["verify_code"]
+
+    try:
+
+        response = requests.get(
+            f"https://users.roblox.com/v1/users/{roblox_id}"
+        )
+
+        if response.status_code != 200:
 
             await msg.channel.send(
-                "❌ Start verification first with /verify"
+                "❌ Failed to find Roblox account."
             )
 
             return
 
-        roblox_id = verify_data[user_id]["roblox_id"]
-        verify_code = verify_data[user_id]["verify_code"]
+        data = response.json()
 
-        try:
+        description = data.get("description", "")
 
-            response = requests.get(
-                f"https://users.roblox.com/v1/users/{roblox_id}"
-            )
-
-            data = response.json()
-
-            description = data.get("description", "")
-
-            if verify_code not in description:
-
-                await msg.channel.send(
-                    "❌ Verification code not found in your Roblox description."
-                )
-
-                return
-
-            verify_data[user_id]["verified"] = True
-
-            save_verify(verify_data)
+        if verify_code not in description:
 
             await msg.channel.send(
-                f"✅ Verified Roblox Account\n\n"
-                f"🎮 User: {verify_data[user_id]['roblox_username']}"
+                "❌ Verification code was not found in your Roblox description.\n\n"
+                "Make sure you pasted the code EXACTLY."
             )
 
-        except Exception as e:
+            return
 
-            print(e)
+        verify_data[user_id]["verified"] = True
 
-            await msg.channel.send(
-                "❌ Verification failed."
-            )
+        save_verify(verify_data)
 
+        await msg.channel.send(
+            f"✅ Roblox Account Verified\n\n"
+            f"🎮 Username: {verify_data[user_id]['roblox_username']}\n"
+            f"🆔 Roblox ID: {roblox_id}"
+        )
 
+    except Exception as e:
+
+        print(e)
+
+        await msg.channel.send(
+            "❌ Verification failed."
+        )
     # =====================================================
     # /setupRBLX
     # =====================================================

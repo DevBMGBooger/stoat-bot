@@ -2,81 +2,91 @@ import stoat
 import json
 import os
 import random
+import requests
 
 client = stoat.Client()
 
-# =========================================================
-# RANK DATABASE FILE
-# =========================================================
+# =====================================================
+# DATABASE FILES
+# =====================================================
 
 RANK_FILE = "ranks.json"
-
-if not os.path.exists(RANK_FILE):
-    with open(RANK_FILE, "w") as f:
-        json.dump({}, f, indent=4)
-
-# =========================================================
-# WARNING DATABASE FILE
-# =========================================================
-
 WARN_FILE = "warnings.json"
+RBLX_FILE = "roblox_setup.json"
 
-if not os.path.exists(WARN_FILE):
-    with open(WARN_FILE, "w") as f:
-        json.dump({}, f, indent=4)
+# =====================================================
+# CREATE FILES IF MISSING
+# =====================================================
 
-# =========================================================
-# LOAD / SAVE RANKS
-# =========================================================
+for file in [RANK_FILE, WARN_FILE, RBLX_FILE]:
+
+    if not os.path.exists(file):
+
+        with open(file, "w") as f:
+            json.dump({}, f, indent=4)
+
+# =====================================================
+# LOAD / SAVE FUNCTIONS
+# =====================================================
 
 def load_ranks():
+
     with open(RANK_FILE, "r") as f:
         return json.load(f)
 
 def save_ranks(data):
+
     with open(RANK_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# =========================================================
-# LOAD / SAVE WARNINGS
-# =========================================================
-
 def load_warnings():
+
     with open(WARN_FILE, "r") as f:
         return json.load(f)
 
 def save_warnings(data):
+
     with open(WARN_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# =========================================================
+def load_rblx():
+
+    with open(RBLX_FILE, "r") as f:
+        return json.load(f)
+
+def save_rblx(data):
+
+    with open(RBLX_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# =====================================================
 # GENERATE WARNING ID
-# =========================================================
+# =====================================================
 
 def generate_warn_id():
+
     return str(random.randint(100000, 999999))
 
-# =========================================================
+# =====================================================
 # GET USER RANK LEVEL
-# =========================================================
+# =====================================================
 
 def get_user_rank_level(server_id, username, msg=None):
 
-    # SERVER OWNER ALWAYS HAS FULL ACCESS
     try:
 
+        # Server owner bypass
         if msg is not None:
 
             if hasattr(msg.channel, "server"):
 
                 server = msg.channel.server
 
-                # If user is server owner
                 if str(server.owner_id) == str(msg.author.id):
                     return 999
 
     except Exception as e:
-        print(f"Owner check failed: {e}")
+        print(e)
 
     ranks = load_ranks()
 
@@ -91,469 +101,246 @@ def get_user_rank_level(server_id, username, msg=None):
 
     return ranks[server_id]["users"][username]["rank_level"]
 
-# =========================================================
+# =====================================================
 # READY EVENT
-# =========================================================
+# =====================================================
 
 @client.on(stoat.ReadyEvent)
 async def ready(event):
+
     print(f"Logged in as {event.me.tag}")
 
-# =========================================================
+# =====================================================
 # MESSAGE EVENT
-# =========================================================
+# =====================================================
 
 @client.on(stoat.MessageCreateEvent)
 async def message(event):
 
     msg = event.message
 
-    # Ignore bots
     if msg.author.bot:
         return
 
     server_id = str(msg.channel.server_id)
 
-    # =====================================================
-    # /createrank
-    # =====================================================
+    # =================================================
+    # /setupRBLX
+    # =================================================
 
-    if msg.content.startswith("/createrank"):
+    if msg.content.startswith("/setupRBLX"):
 
-        user_rank = get_user_rank_level(
-            server_id,
-            msg.author.name,
-            msg
+        setup_table = (
+            "╔════════════════════════════╗\n"
+            "║     ROBLOX SETUP GUIDE     ║\n"
+            "╠════════════════════════════╣\n"
+            "║ /setupGroupId GROUP_ID     ║\n"
+            "║ /setupRankPerm NAME LEVEL  ║\n"
+            "║ /setupNames ROLE RANK      ║\n"
+            "║ /unconnectGroupId          ║\n"
+            "╚════════════════════════════╝"
         )
 
-        if user_rank < 3:
+        await msg.channel.send(setup_table)
+
+    # =================================================
+    # /setupGroupId
+    # =================================================
+
+    if msg.content.startswith("/setupGroupId"):
+
+        parts = msg.content.split(" ")
+
+        if len(parts) < 2:
+
             await msg.channel.send(
-                "❌ You need rank level 3 or higher to use rank commands."
+                "❌ Usage:\n/setupGroupId GROUP_ID"
             )
+
             return
+
+        group_id = parts[1]
+
+        if not group_id.isdigit():
+
+            await msg.channel.send(
+                "❌ Group ID must be numbers only."
+            )
+
+            return
+
+        url = f"https://groups.roblox.com/v1/groups/{group_id}"
+
+        try:
+
+            response = requests.get(url)
+
+            if response.status_code != 200:
+
+                await msg.channel.send(
+                    "❌ Invalid Roblox Group ID."
+                )
+
+                return
+
+            data = response.json()
+
+            group_name = data["name"]
+
+            roblox_data = load_rblx()
+
+            if server_id not in roblox_data:
+                roblox_data[server_id] = {}
+
+            roblox_data[server_id]["group_id"] = group_id
+            roblox_data[server_id]["group_name"] = group_name
+
+            save_rblx(roblox_data)
+
+            await msg.channel.send(
+                f"✅ Roblox Group Connected\n\n"
+                f"🏢 Group: {group_name}\n"
+                f"🆔 ID: {group_id}"
+            )
+
+        except Exception as e:
+
+            print(e)
+
+            await msg.channel.send(
+                "❌ Failed to connect to Roblox API."
+            )
+
+    # =================================================
+    # /unconnectGroupId
+    # =================================================
+
+    if msg.content.startswith("/unconnectGroupId"):
+
+        roblox_data = load_rblx()
+
+        if server_id not in roblox_data:
+
+            await msg.channel.send(
+                "❌ No Roblox group connected."
+            )
+
+            return
+
+        if "group_id" not in roblox_data[server_id]:
+
+            await msg.channel.send(
+                "❌ No Roblox group connected."
+            )
+
+            return
+
+        old_group_id = roblox_data[server_id]["group_id"]
+
+        old_group_name = roblox_data[server_id].get(
+            "group_name",
+            "Unknown Group"
+        )
+
+        roblox_data[server_id].pop("group_id", None)
+        roblox_data[server_id].pop("group_name", None)
+        roblox_data[server_id].pop("role_links", None)
+        roblox_data[server_id].pop("rank_permissions", None)
+
+        save_rblx(roblox_data)
+
+        await msg.channel.send(
+            f"✅ Roblox group disconnected.\n\n"
+            f"🏢 Group: {old_group_name}\n"
+            f"🆔 Removed ID: {old_group_id}"
+        )
+
+    # =================================================
+    # /setupRankPerm
+    # =================================================
+
+    if msg.content.startswith("/setupRankPerm"):
 
         parts = msg.content.split(" ")
 
         if len(parts) < 3:
+
             await msg.channel.send(
-                "❌ Usage:\n"
-                "/createrank RankName 1-5"
+                "❌ Usage:\n/setupRankPerm NAME LEVEL"
             )
+
             return
 
         rank_name = parts[1]
 
         try:
-            rank_level = int(parts[2])
+            level = int(parts[2])
+
         except:
+
             await msg.channel.send(
-                "❌ Rank level must be a number."
+                "❌ Level must be a number."
             )
+
             return
 
-        if rank_level < 1 or rank_level > 5:
-            await msg.channel.send(
-                "❌ Rank level must be between 1 and 5."
-            )
-            return
+        roblox_data = load_rblx()
 
-        ranks = load_ranks()
+        if server_id not in roblox_data:
+            roblox_data[server_id] = {}
 
-        if server_id not in ranks:
-            ranks[server_id] = {
-                "rank_definitions": {},
-                "users": {}
-            }
+        if "rank_permissions" not in roblox_data[server_id]:
+            roblox_data[server_id]["rank_permissions"] = {}
 
-        ranks[server_id]["rank_definitions"][rank_name] = rank_level
+        roblox_data[server_id]["rank_permissions"][rank_name] = level
 
-        save_ranks(ranks)
+        save_rblx(roblox_data)
 
         await msg.channel.send(
-            f"✅ Created rank '{rank_name}' with level {rank_level}."
+            f"✅ Rank Permission Saved\n\n"
+            f"🏅 Rank: {rank_name}\n"
+            f"📊 Level: {level}"
         )
 
-    # =====================================================
-    # /rank
-    # =====================================================
+    # =================================================
+    # /setupNames
+    # =================================================
 
-    if msg.content.startswith("/rank"):
-
-        user_rank = get_user_rank_level(
-            server_id,
-            msg.author.name,
-            msg
-        )
-
-        if user_rank < 3:
-            await msg.channel.send(
-                "❌ You need rank level 3 or higher to use rank commands."
-            )
-            return
+    if msg.content.startswith("/setupNames"):
 
         parts = msg.content.split(" ")
 
         if len(parts) < 3:
+
             await msg.channel.send(
-                "❌ Usage:\n"
-                "/rank USER RankName"
+                "❌ Usage:\n/setupNames ROLE STOAT_RANK"
             )
+
             return
 
-        target_user = parts[1]
-        rank_name = parts[2]
+        roblox_role = parts[1]
+        stoat_rank = parts[2]
 
-        ranks = load_ranks()
+        roblox_data = load_rblx()
 
-        if server_id not in ranks:
-            await msg.channel.send(
-                "❌ No ranks exist in this server."
-            )
-            return
+        if server_id not in roblox_data:
+            roblox_data[server_id] = {}
 
-        if rank_name not in ranks[server_id]["rank_definitions"]:
-            await msg.channel.send(
-                "❌ That rank does not exist."
-            )
-            return
+        if "role_links" not in roblox_data[server_id]:
+            roblox_data[server_id]["role_links"] = {}
 
-        rank_level = ranks[server_id]["rank_definitions"][rank_name]
+        roblox_data[server_id]["role_links"][roblox_role] = stoat_rank
 
-        ranks[server_id]["users"][target_user] = {
-            "rank_name": rank_name,
-            "rank_level": rank_level
-        }
-
-        save_ranks(ranks)
+        save_rblx(roblox_data)
 
         await msg.channel.send(
-            f"✅ {target_user} has been ranked '{rank_name}'."
+            f"✅ Roblox Role Linked\n\n"
+            f"🎮 Roblox Role: {roblox_role}\n"
+            f"🤖 Stoat Rank: {stoat_rank}"
         )
 
-    # =====================================================
-    # /unrank
-    # =====================================================
-
-    if msg.content.startswith("/unrank"):
-
-        user_rank = get_user_rank_level(
-            server_id,
-            msg.author.name,
-            msg
-        )
-
-        if user_rank < 3:
-            await msg.channel.send(
-                "❌ You need rank level 3 or higher to use rank commands."
-            )
-            return
-
-        parts = msg.content.split(" ")
-
-        if len(parts) < 2:
-            await msg.channel.send(
-                "❌ Usage:\n"
-                "/unrank USER"
-            )
-            return
-
-        target_user = parts[1]
-
-        # Prevent demoting server owner
-        try:
-
-            if hasattr(msg.channel, "server"):
-
-                server = msg.channel.server
-
-                owner_member = await server.fetch_member(
-                    server.owner_id
-                )
-
-                if owner_member.name == target_user:
-
-                    await msg.channel.send(
-                        "❌ You cannot demote the server owner."
-                    )
-
-                    return
-
-        except Exception as e:
-            print(f"Owner protection failed: {e}")
-
-        ranks = load_ranks()
-
-        if server_id not in ranks:
-            await msg.channel.send(
-                "❌ No ranks exist in this server."
-            )
-            return
-
-        ranks[server_id]["users"][target_user] = {
-            "rank_name": "Unranked",
-            "rank_level": 0
-        }
-
-        save_ranks(ranks)
-
-        await msg.channel.send(
-            f"✅ {target_user} has been unranked."
-        )
-
-    # =====================================================
-    # /checkrank
-    # =====================================================
-
-    if msg.content.startswith("/checkrank"):
-
-        parts = msg.content.split(" ")
-
-        if len(parts) < 2:
-            await msg.channel.send(
-                "❌ Usage:\n"
-                "/checkrank USER"
-            )
-            return
-
-        target_user = parts[1]
-
-        # Show owner automatically
-        try:
-
-            if hasattr(msg.channel, "server"):
-
-                server = msg.channel.server
-
-                owner_member = await server.fetch_member(
-                    server.owner_id
-                )
-
-                if owner_member.name == target_user:
-
-                    await msg.channel.send(
-                        f"👑 {target_user} is the Server Owner.\n"
-                        f"🏅 Rank Level: 999"
-                    )
-
-                    return
-
-        except Exception as e:
-            print(f"Owner check failed: {e}")
-
-        ranks = load_ranks()
-
-        if (
-            server_id not in ranks or
-            target_user not in ranks[server_id]["users"]
-        ):
-            await msg.channel.send(
-                f"❌ {target_user} has no rank."
-            )
-            return
-
-        user_rank_data = ranks[server_id]["users"][target_user]
-
-        await msg.channel.send(
-            f"👤 User: {target_user}\n"
-            f"🏅 Rank: {user_rank_data['rank_name']}\n"
-            f"📊 Level: {user_rank_data['rank_level']}"
-        )
-
-    # =====================================================
-    # /warn
-    # =====================================================
-
-    if msg.content.startswith("/warn"):
-
-        user_rank = get_user_rank_level(
-            server_id,
-            msg.author.name,
-            msg
-        )
-
-        if user_rank < 1:
-            await msg.channel.send(
-                "❌ You need rank level 1 or higher to use warn commands."
-            )
-            return
-
-        parts = msg.content.split(" ", 2)
-
-        if len(parts) < 3:
-            await msg.channel.send(
-                "❌ Usage:\n"
-                "/warn USER REASON"
-            )
-            return
-
-        target = parts[1]
-        reason = parts[2]
-
-        warnings = load_warnings()
-
-        if server_id not in warnings:
-            warnings[server_id] = {}
-
-        if target not in warnings[server_id]:
-            warnings[server_id][target] = []
-
-        warn_id = generate_warn_id()
-
-        warnings[server_id][target].append({
-            "id": warn_id,
-            "moderator": msg.author.name,
-            "reason": reason
-        })
-
-        save_warnings(warnings)
-
-        await msg.channel.send(
-            f"⚠️ {target} has been warned.\n"
-            f"Warning ID: {warn_id}\n"
-            f"Reason: {reason}"
-        )
-
-    # =====================================================
-    # /warnings
-    # =====================================================
-
-    if msg.content.startswith("/warnings"):
-
-        user_rank = get_user_rank_level(
-            server_id,
-            msg.author.name,
-            msg
-        )
-
-        if user_rank < 1:
-            await msg.channel.send(
-                "❌ You need rank level 1 or higher to use warn commands."
-            )
-            return
-
-        parts = msg.content.split(" ", 1)
-
-        if len(parts) < 2:
-            await msg.channel.send(
-                "❌ Usage:\n"
-                "/warnings WARNING_ID"
-            )
-            return
-
-        warn_id = parts[1]
-
-        warnings = load_warnings()
-
-        if server_id not in warnings:
-            await msg.channel.send(
-                "❌ No warnings exist in this server."
-            )
-            return
-
-        found = False
-
-        for user in warnings[server_id]:
-
-            for warn in warnings[server_id][user]:
-
-                if warn["id"] == warn_id:
-
-                    found = True
-
-                    await msg.channel.send(
-                        f"⚠️ Warning Found\n\n"
-                        f"User: {user}\n"
-                        f"Warning ID: {warn['id']}\n"
-                        f"Reason: {warn['reason']}\n"
-                        f"Moderator: {warn['moderator']}"
-                    )
-
-                    break
-
-            if found:
-                break
-
-        if not found:
-            await msg.channel.send(
-                "❌ Warning ID not found in this server."
-            )
-
-    # =====================================================
-    # /unwarn
-    # =====================================================
-
-    if msg.content.startswith("/unwarn"):
-
-        user_rank = get_user_rank_level(
-            server_id,
-            msg.author.name,
-            msg
-        )
-
-        if user_rank < 1:
-            await msg.channel.send(
-                "❌ You need rank level 1 or higher to use warn commands."
-            )
-            return
-
-        parts = msg.content.split(" ", 1)
-
-        if len(parts) < 2:
-            await msg.channel.send(
-                "❌ Usage:\n"
-                "/unwarn WARNING_ID"
-            )
-            return
-
-        warn_id = parts[1]
-
-        warnings = load_warnings()
-
-        if server_id not in warnings:
-            await msg.channel.send(
-                "❌ No warnings exist in this server."
-            )
-            return
-
-        found = False
-
-        for user in warnings[server_id]:
-
-            for warn in warnings[server_id][user]:
-
-                if warn["id"] == warn_id:
-
-                    warnings[server_id][user].remove(warn)
-
-                    found = True
-
-                    save_warnings(warnings)
-
-                    await msg.channel.send(
-                        f"✅ Warning {warn_id} removed from {user}."
-                    )
-
-                    break
-
-            if found:
-                break
-
-        if not found:
-            await msg.channel.send(
-                "❌ Warning ID not found in this server."
-            )
-
-# =========================================================
-# KEEP BOT ONLINE
-# =========================================================
-
-while True:
-
-    try:
-
-        client.run("91qudXeynh0CRRQMsrXJOVL9ro_LvB5Ab9D6wFB07dVFyOwjxztPYa0OsLXcTwYx")
-
-    except Exception as e:
-
-        print(f"Bot crashed: {e}")
-        print("Restarting bot...")
+# =====================================================
+# START BOT
+# =====================================================
+
+client.run("BOT TOKEN")
